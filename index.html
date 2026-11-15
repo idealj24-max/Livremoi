@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Livremoi 🇲🇷 — Commande & Livraison Temps Réel</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00A859;
+            --primary-dark: #008245;
+            --danger: #D01C1F;
+            --warning: #F59E0B;
+            --bg: #F4F6F8;
+            --card: #FFFFFF;
+            --text: #1E293B;
+            --muted: #64748B;
+            --border: #E2E8F0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+        body { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        header {
+            background: var(--card);
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            z-index: 1000;
+        }
+        .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.2rem; color: var(--primary); }
+        .ws-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; }
+        .ws-dot.online { background: var(--primary); box-shadow: 0 0 6px var(--primary); }
+
+        select {
+            padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg); font-weight: 600; color: var(--text); outline: none;
+        }
+
+        .role-tabs { display: flex; background: #E2E8F0; padding: 4px; gap: 4px; }
+        .role-btn {
+            flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
+            font-weight: 700; font-size: 0.72rem; cursor: pointer; background: transparent; color: var(--muted);
+        }
+        .role-btn.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .main-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        @media (min-width: 768px) {
+            .main-container { flex-direction: row; }
+            .sidebar { width: 440px; border-right: 1px solid var(--border); }
+        }
+
+        #map { flex: 1; min-height: 38%; z-index: 1; }
+
+        .sidebar {
+            background: var(--card); flex: 1; overflow-y: auto; padding: 16px; z-index: 10;
+            border-top-left-radius: 20px; border-top-right-radius: 20px; margin-top: -14px;
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
+        }
+        @media (min-width: 768px) { .sidebar { margin-top: 0; border-radius: 0; } }
+
+        .section-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .badge { background: #DCFCE7; color: var(--primary-dark); padding: 3px 8px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; }
+        .badge-warn { background: #FEF3C7; color: #B45309; }
+        .badge-danger { background: #FEE2E2; color: var(--danger); }
+
+        .card { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #FFF; }
+        .resto-card { cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.15s; }
+        .resto-card:hover { border-color: var(--primary); background: #F0FDF4; }
+
+        .menu-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); }
+        .menu-item:last-child { border-bottom: none; }
+        .price { font-weight: 700; color: var(--primary); font-size: 0.9rem; }
+
+        .btn {
+            background: var(--primary); color: white; border: none; padding: 10px 14px;
+            border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; font-size: 0.88rem;
+        }
+        .btn:hover { background: var(--primary-dark); }
+        .btn-sm { padding: 6px 10px; width: auto; font-size: 0.78rem; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .btn-danger { background: var(--danger); color: white; }
+
+        .input-group { margin: 10px 0; }
+        .input-group label { display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 4px; color: var(--muted); }
+        .input-group input, .input-group select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.88rem; }
+
+        .step-bar { display: flex; justify-content: space-between; margin: 12px 0; font-size: 0.72rem; font-weight: 700; }
+        .step { flex: 1; text-align: center; color: var(--muted); }
+        .step.done { color: var(--primary); }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="brand">
+        <span id="wsIndicator" class="ws-dot" title="Connexion Temps Réel"></span>
+        🇲🇷 Livre<span>moi</span>
+    </div>
+    <select id="citySelector" onchange="changeCity()">
+        <option value="nouakchott">Nouakchott</option>
+        <option value="nouadhibou">Nouadhibou</option>
+        <option value="zouerat">Zouérat</option>
+        <option value="kiffa">Kiffa</option>
+        <option value="atar">Atar</option>
+    </select>
+</header>
+
+<div class="role-tabs">
+    <button class="role-btn active" onclick="switchRole('client', this)">🛒 Client</button>
+    <button class="role-btn" onclick="switchRole('resto', this)">🍳 Restaurant</button>
+    <button class="role-btn" onclick="switchRole('driver', this)">🛵 Livreur</button>
+    <button class="role-btn" onclick="switchRole('admin', this)">📊 Admin (14%)</button>
+</div>
+
+<div class="main-container">
+    <div id="map"></div>
+
+    <div class="sidebar">
+        
+        <!-- 1. ESPACE CLIENT -->
+        <div id="clientView">
+            <div id="clientRestoList">
+                <div class="section-title">
+                    <span>Restaurants à <span id="cityLabel">Nouakchott</span></span>
+                    <span class="badge" id="activeDriversBadge">0 livreur</span>
+                </div>
+                <div id="restoContainer"></div>
+            </div>
+
+            <div id="clientMenuBox" class="hidden">
+                <button class="btn btn-outline btn-sm" onclick="closeRestoMenu()" style="margin-bottom: 10px;">← Tous les restaurants</button>
+                <div class="section-title">
+                    <span id="menuRestoTitle">Restaurant</span>
+                    <span class="badge" id="menuRestoZone">Zone</span>
+                </div>
+                <div id="menuItemsList"></div>
+
+                <div class="card" style="margin-top: 14px; background: #F8FAFC;">
+                    <div class="section-title">
+                        <span>Panier (+150 MRU livraison)</span>
+                        <span id="cartTotalDisplay" class="price">0 MRU</span>
+                    </div>
+                    <div id="cartItemsText" style="font-size: 0.82rem; color: var(--muted); margin-bottom: 8px;">Panier vide</div>
+                    
+                    <div class="input-group">
+                        <label>📍 Point de repère précis (Quartier, Mosquée, Carrefour...)</label>
+                        <input type="text" id="landmarkInput" placeholder="Ex: Tevragh-Zeina, près de l'ambassade...">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>💳 Mode de paiement</label>
+                        <select id="paymentSelect" onchange="togglePaymentField()">
+                            <option value="Espèces à la livraison">Espèces à la livraison (Cash)</option>
+                            <option value="Bankily">Bankily (Paiement Mobile)</option>
+                            <option value="Masrvi">Masrvi (Paiement Mobile)</option>
+                            <option value="Sedad">Sedad</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group hidden" id="phoneGroup">
+                        <label id="phoneLabel">📱 Numéro de téléphone Bankily</label>
+                        <input type="tel" id="mobilePhoneInput" placeholder="Ex: 36123456 ou 46123456">
+                    </div>
+
+                    <button class="btn btn-outline btn-sm" onclick="useMyGPS()" style="width:100%; margin-bottom:8px;">🎯 Ma position GPS (ou cliquez sur la carte)</button>
+                    <button class="btn" onclick="initiatePaymentAndOrder()">Payer & Commander</button>
+                </div>
+            </div>
+
+            <div id="clientOrderTracker" class="hidden">
+                <div class="section-title">
+                    <span>Commande #<span id="trackOrderId"></span></span>
+                    <span class="badge badge-warn" id="trackStatusBadge">En attente resto</span>
+                </div>
+                <div class="card">
+                    <p style="font-size:0.85rem; margin-bottom:4px;"><strong>Restaurant :</strong> <span id="trackRestoName"></span></p>
+                    <p style="font-size:0.85rem; margin-bottom:4px;"><strong>Livreur :</strong> <span id="trackDriverName">En attente...</span></p>
+                    <p style="font-size:0.85rem; margin-bottom:4px;"><strong>Paiement :</strong> <span id="trackPayment"></span> — <strong class="price" id="trackAmount"></strong></p>
+                    <p style="font-size:0.85rem; margin-bottom:8px;"><strong>État Paiement :</strong> <span id="trackPayStatus" class="badge">Payé en ligne</span></p>
+
+                    <div class="step-bar">
+                        <div class="step done" id="st1">1. Envoyée</div>
+                        <div class="step" id="st2">2. Validée Resto</div>
+                        <div class="step" id="st3">3. En route</div>
+                        <div class="step" id="st4">4. Livrée</div>
+                    </div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="resetClientView()" style="width:100%;">Commander autre chose</button>
+            </div>
+        </div>
+
+        <!-- 2. ESPACE RESTAURANT -->
+        <div id="restoView" class="hidden">
+            <div class="input-group" style="margin-top:0;">
+                <label>🏪 Sélectionnez votre Restaurant :</label>
+                <select id="restoAdminSelector" onchange="renderRestoDashboard()"></select>
+            </div>
+
+            <div class="section-title" style="margin-top: 14px;">
+                <span>Commandes du Restaurant</span>
+                <span class="badge badge-warn" id="restoPendingCount">0 en attente</span>
+            </div>
+            <div id="restoOrdersList"></div>
+
+            <div class="section-title" style="margin-top: 18px;">
+                <span>Gestion du Menu (Temps Réel)</span>
+            </div>
+            <div class="card" style="background: #F8FAFC;">
+                <div style="display:flex; gap:6px; margin-bottom:8px;">
+                    <input type="text" id="newDishName" placeholder="Nom du plat" style="flex:2; padding:8px; border:1px solid var(--border); border-radius:8px;">
+                    <input type="number" id="newDishPrice" placeholder="MRU" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px;">
+                </div>
+                <button class="btn btn-sm" style="width:100%;" onclick="addDishToMenu()">+ Ajouter au menu</button>
+            </div>
+            <div id="restoMenuManager"></div>
+        </div>
+
+        <!-- 3. ESPACE LIVREUR -->
+        <div id="driverView" class="hidden">
+            <div class="input-group" style="margin-top:0;">
+                <label>🛵 Profil Livreur actif :</label>
+                <select id="driverProfileSelector" onchange="renderDriverDashboard()"></select>
+            </div>
+
+            <div class="card" style="background:#F0FDF4; border-color:var(--primary); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div style="font-weight:700; font-size:0.88rem;">Partage GPS Temps Réel</div>
+                    <div style="font-size:0.75rem; color:var(--muted);" id="gpsStatusText">Prêt à diffuser</div>
+                </div>
+                <button class="btn btn-sm" id="btnToggleGps" onclick="toggleRealGPS()">📡 Activer GPS</button>
+            </div>
+
+            <div id="driverMissionsContainer"></div>
+        </div>
+
+        <!-- 4. ESPACE ADMIN (COMMISSION 14%) -->
+        <div id="adminView" class="hidden">
+            <div class="section-title">
+                <span>📊 Tableau de Bord Financier (Livremoi)</span>
+                <span class="badge">Commission : 14%</span>
+            </div>
+            <div class="card" style="background: #F0FDF4; border-color: var(--primary);">
+                <div style="font-size: 0.82rem; color: var(--muted);">Chiffre d'affaires de l'application (14% / livraison)</div>
+                <div style="font-size: 1.6rem; font-weight: 800; color: var(--primary); margin: 6px 0;" id="adminTotalCommission">0 MRU</div>
+                <div style="font-size: 0.8rem; color: var(--text);">Nombre total de livraisons réussies : <strong id="adminTotalDeliveries">0</strong></div>
+            </div>
+
+            <div class="section-title" style="margin-top: 14px;">
+                <span>Historique des commissions perçues</span>
+            </div>
+            <div id="adminCommissionsList"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let appState = { cities: {}, orders: [], stats: { total_commission: 0, total_deliveries: 0 } };
+    let currentCity = "nouakchott";
+    let selectedRestoId = null;
+    let cart = [];
+    let clientCoords = [18.0865, -15.9800];
+    let myOrderId = null;
+    let ws = null;
+    let gpsWatchId = null;
+
+    let map, clientMarker, routePolyline;
+    let mapMarkers = { restos: [], drivers: {} };
+
+    const makeIcon = (emoji, bg) => L.divIcon({
+        html: `<div style="background:${bg}; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:17px; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);">${emoji}</div>`,
+        className: '', iconSize: [34, 34], iconAnchor: [17, 17]
+    });
+
+    function connectWebSocket() {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+        ws.onopen = () => document.getElementById("wsIndicator").classList.add("online");
+        ws.onclose = () => {
+            document.getElementById("wsIndicator").classList.remove("online");
+            setTimeout(connectWebSocket, 2000);
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "STATE_UPDATE") {
+                appState.cities = msg.cities;
+                appState.orders = msg.orders;
+                appState.stats = msg.stats;
+                refreshAllViews();
+            } else if (msg.type === "GPS_TICK") {
+                if (msg.city === currentCity && mapMarkers.drivers[msg.driver_id]) {
+                    mapMarkers.drivers[msg.driver_id].setLatLng([msg.lat, msg.lng]);
+                }
+                if (appState.cities[msg.city]) {
+                    const drv = appState.cities[msg.city].drivers.find(d => d.id === msg.driver_id);
+                    if (drv) { drv.lat = msg.lat; drv.lng = msg.lng; }
+                }
+                updateActiveRouteLine();
+            }
+        };
+    }
+
+    async function initApp() {
+        map = L.map('map').setView([18.0858, -15.9785], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
+
+        map.on('click', (e) => {
+            if (!myOrderId) setClientMarker(e.latlng.lat, e.latlng.lng);
+        });
+
+        const res = await fetch('/api/state');
+        appState = await res.json();
+        
+        connectWebSocket();
+        changeCity();
+    }
+
+    function changeCity() {
+        currentCity = document.getElementById("citySelector").value;
+        const cityData = appState.cities[currentCity];
+        if (!cityData) return;
+
+        document.getElementById("cityLabel").innerText = cityData.name;
+        map.setView(cityData.center, cityData.zoom);
+        clientCoords = [cityData.center[0] - 0.0025, cityData.center[1] - 0.0025];
+        setClientMarker(clientCoords[0], clientCoords[1]);
+
+        document.getElementById("restoAdminSelector").innerHTML = cityData.restaurants.map(r => `<option value="${r.id}">${r.name} (${r.zone})</option>`).join("");
+        document.getElementById("driverProfileSelector").innerHTML = cityData.drivers.map(d => `<option value="${d.id}">${d.name}</option>`).join("");
+
+        closeRestoMenu();
+        refreshAllViews();
+    }
+
+    function refreshAllViews() {
+        renderMapMarkers();
+        renderClientView();
+        renderRestoDashboard();
+        renderDriverDashboard();
+        renderAdminDashboard();
+        updateActiveRouteLine();
+    }
+
+    function renderMapMarkers() {
+        const cityData = appState.cities[currentCity];
+        if (!cityData) return;
+
+        mapMarkers.restos.forEach(m => map.removeLayer(m));
+        mapMarkers.restos = [];
+        Object.values(mapMarkers.drivers).forEach(m => map.removeLayer(m));
+        mapMarkers.drivers = {};
+
+        cityData.restaurants.forEach(r => {
+            const m = L.marker([r.lat, r.lng], { icon: makeIcon('🍽️', '#D01C1F') })
+                .addTo(map).bindPopup(`<b>${r.name}</b><br>${r.zone}`);
+            m.on('click', () => openRestoMenu(r.id));
+            mapMarkers.restos.push(m);
+        });
+
+        cityData.drivers.forEach(d => {
+            const m = L.marker([d.lat, d.lng], { icon: makeIcon('🛵', '#00A859') })
+                .addTo(map).bindPopup(`🛵 <b>${d.name}</b>`);
+            mapMarkers.drivers[d.id] = m;
+        });
+
+        document.getElementById("activeDriversBadge").innerText = `${cityData.drivers.length} livreur(s)`;
+    }
+
+    function setClientMarker(lat, lng) {
+        clientCoords = [lat, lng];
+        if (clientMarker) map.removeLayer(clientMarker);
+        clientMarker = L.marker([lat, lng], { icon: makeIcon('📍', '#2563EB'), draggable: true })
+            .addTo(map).bindPopup("Votre position");
+        clientMarker.on('dragend', e => {
+            const p = e.target.getLatLng();
+            clientCoords = [p.lat, p.lng];
+        });
+    }
+
+    function useMyGPS() {
+        navigator.geolocation.getCurrentPosition(pos => {
+            setClientMarker(pos.coords.latitude, pos.coords.longitude);
+            map.setView(clientCoords, 15);
+        }, () => alert("Activez le GPS."));
+    }
+
+    function updateActiveRouteLine() {
+        if (routePolyline) map.removeLayer(routePolyline);
+        const activeOrder = appState.orders.find(o => o.id === myOrderId && o.status !== "DELIVERED" && o.status !== "REJECTED");
+        if (!activeOrder || !activeOrder.driver) return;
+
+        const pts = [
+            [activeOrder.driver.lat, activeOrder.driver.lng],
+            [activeOrder.resto.lat, activeOrder.resto.lng],
+            [activeOrder.client_lat, activeOrder.client_lng]
+        ];
+        routePolyline = L.polyline(pts, { color: '#00A859', weight: 5, dashArray: '8, 8' }).addTo(map);
+    }
+
+    function togglePaymentField() {
+        const method = document.getElementById("paymentSelect").value;
+        const phoneGroup = document.getElementById("phoneGroup");
+        const phoneLabel = document.getElementById("phoneLabel");
+
+        if (method === "Bankily" || method === "Masrvi") {
+            phoneGroup.classList.remove("hidden");
+            phoneLabel.innerText = `📱 Numéro de téléphone ${method}`;
+        } else {
+            phoneGroup.classList.add("hidden");
+        }
+    }
+
+    function renderClientView() {
+        const cityData = appState.cities[currentCity];
+        const container = document.getElementById("restoContainer");
+        container.innerHTML = cityData.restaurants.map(r => `
+            <div class="card resto-card" onclick="openRestoMenu(${r.id})">
+                <div>
+                    <h4 style="font-size:0.95rem;">${r.name}</h4>
+                    <p style="font-size:0.78rem; color:var(--muted);">📍 ${r.zone} • ${r.menu.length} plats</p>
+                </div>
+                <button class="btn btn-sm">Commander</button>
+            </div>
+        `).join("");
+
+        if (selectedRestoId) {
+            const resto = cityData.restaurants.find(r => r.id === selectedRestoId);
+            if (resto) {
+                document.getElementById("menuItemsList").innerHTML = resto.menu.map((item, idx) => `
+                    <div class="menu-item">
+                        <div>
+                            <div style="font-weight:600; font-size:0.88rem;">${item.name}</div>
+                            <div class="price">${item.price} MRU</div>
+                        </div>
+                        <button class="btn btn-sm btn-outline" onclick="addToCart(${resto.id}, ${idx})">+ Ajouter</button>
+                    </div>
+                `).join("");
+            }
+        }
+
+        if (myOrderId) {
+            const ord = appState.orders.find(o => o.id === myOrderId);
+            if (ord) {
+                document.getElementById("clientRestoList").classList.add("hidden");
+                document.getElementById("clientMenuBox").classList.add("hidden");
+                document.getElementById("clientOrderTracker").classList.remove("hidden");
+
+                document.getElementById("trackOrderId").innerText = ord.id;
+                document.getElementById("trackRestoName").innerText = ord.resto.name;
+                document.getElementById("trackPayment").innerText = `${ord.payment_method} ${ord.phone_number ? '('+ord.phone_number+')' : ''}`;
+                document.getElementById("trackAmount").innerText = `${ord.total} MRU`;
+                
+                const payBadge = document.getElementById("trackPayStatus");
+                if (ord.payment_status === "PAID_ONLINE") {
+                    payBadge.innerText = `✅ Paiement ${ord.payment_method} validé`;
+                    payBadge.className = "badge";
+                } else {
+                    payBadge.innerText = `💵 Paiement Espèces à la livraison`;
+                    payBadge.className = "badge badge-warn";
+                }
+
+                const badge = document.getElementById("trackStatusBadge");
+                if (ord.status === "PENDING_RESTO") {
+                    badge.innerText = "⏳ Attente validation resto";
+                } else if (ord.status === "REJECTED") {
+                    badge.innerText = "❌ Refusée"; badge.className = "badge badge-danger";
+                } else if (ord.status === "ASSIGNED_DRIVER") {
+                    badge.innerText = "👨‍🍳 Validée • Livreur en route"; badge.className = "badge";
+                    document.getElementById("st2").classList.add("done");
+                    document.getElementById("trackDriverName").innerText = ord.driver ? ord.driver.name : "";
+                } else if (ord.status === "PICKED_UP") {
+                    badge.innerText = "🛵 Livreur en chemin !";
+                    document.getElementById("st2").classList.add("done"); document.getElementById("st3").classList.add("done");
+                } else if (ord.status === "DELIVERED") {
+                    badge.innerText = "✅ Livrée (14% commission déduite)";
+                    document.getElementById("st4").classList.add("done");
+                }
+            }
+        }
+    }
+
+    function openRestoMenu(restoId) {
+        selectedRestoId = restoId;
+        cart = [];
+        updateCartDisplay();
+        const resto = appState.cities[currentCity].restaurants.find(r => r.id === restoId);
+        document.getElementById("menuRestoTitle").innerText = resto.name;
+        document.getElementById("menuRestoZone").innerText = resto.zone;
+        document.getElementById("clientRestoList").classList.add("hidden");
+        document.getElementById("clientMenuBox").classList.remove("hidden");
+        map.setView([resto.lat, resto.lng], 15);
+        renderClientView();
+    }
+
+    function closeRestoMenu() {
+        selectedRestoId = null;
+        document.getElementById("clientMenuBox").classList.add("hidden");
+        document.getElementById("clientRestoList").classList.remove("hidden");
+    }
+
+    function addToCart(restoId, itemIdx) {
+        const resto = appState.cities[currentCity].restaurants.find(r => r.id === restoId);
+        cart.push(resto.menu[itemIdx]);
+        updateCartDisplay();
+    }
+
+    function updateCartDisplay() {
+        const subTotal = cart.reduce((s, i) => s + i.price, 0);
+        const total = subTotal > 0 ? subTotal + 150 : 0;
+        document.getElementById("cartTotalDisplay").innerText = `${total} MRU`;
+        document.getElementById("cartItemsText").innerText = cart.length ? cart.map(i => i.name).join(", ") : "Panier vide";
+    }
+
+    async function initiatePaymentAndOrder() {
+        if (!cart.length) return alert("Ajoutez au moins un plat.");
+        const method = document.getElementById("paymentSelect").value;
+        const phone = document.getElementById("mobilePhoneInput").value.trim();
+
+        if ((method === "Bankily" || method === "Masrvi") && !phone) {
+            alert(`Veuillez entrer votre numéro de téléphone ${method} pour effectuer le paiement automatique.`);
+            return;
+        }
+
+        // Simulation de la passerelle de paiement mobile mauritanienne (Pop-up USSD)
+        if (method === "Bankily" || method === "Masrvi") {
+            const confirmPay = confirm(`📱 [Simulation Passerelle ${method}]\n\nUne demande de prélèvement de ${cart.reduce((s,i)=>s+i.price,0)+150} MRU a été envoyée au ${phone}.\n\nVoulez-vous valider le paiement ?`);
+            if (!confirmPay) {
+                alert("Paiement annulé.");
+                return;
+            }
+        }
+
+        const subTotal = cart.reduce((s, i) => s + i.price, 0);
+        const payload = {
+            city: currentCity, resto_id: selectedRestoId, items: cart,
+            total: subTotal + 150, client_lat: clientCoords[0], client_lng: clientCoords[1],
+            landmark: document.getElementById("landmarkInput").value || "Point GPS",
+            payment_method: method,
+            phone_number: phone || null
+        };
+
+        const res = await fetch('/api/orders', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const created = await res.json();
+        myOrderId = created.id;
+        renderClientView();
+    }
+
+    function resetClientView() {
+        myOrderId = null;
+        if (routePolyline) map.removeLayer(routePolyline);
+        ['st2','st3','st4'].forEach(id => document.getElementById(id).classList.remove("done"));
+        document.getElementById("clientOrderTracker").classList.add("hidden");
+        document.getElementById("clientRestoList").classList.remove("hidden");
+    }
+
+    function renderRestoDashboard() {
+        const restoId = parseInt(document.getElementById("restoAdminSelector").value);
+        const cityData = appState.cities[currentCity];
+        if (!cityData) return;
+        const resto = cityData.restaurants.find(r => r.id === restoId);
+        if (!resto) return;
+
+        document.getElementById("restoMenuManager").innerHTML = resto.menu.map(item => `
+            <div class="menu-item">
+                <span><strong>${item.name}</strong> — <span class="price">${item.price} MRU</span></span>
+                <button class="btn btn-sm btn-danger" onclick="deleteDish(${resto.id}, ${item.id})">Suppr.</button>
+            </div>
+        `).join("");
+
+        const restoOrders = appState.orders.filter(o => o.resto.id === restoId);
+        const pendingCount = restoOrders.filter(o => o.status === "PENDING_RESTO").length;
+        document.getElementById("restoPendingCount").innerText = `${pendingCount} en attente`;
+
+        const ordersDiv = document.getElementById("restoOrdersList");
+        if (!restoOrders.length) {
+            ordersDiv.innerHTML = `<p style="font-size:0.82rem; color:var(--muted);">Aucune commande.</p>`;
+            return;
+        }
+
+        ordersDiv.innerHTML = restoOrders.map(o => `
+            <div class="card" style="border-left: 4px solid ${o.status === 'PENDING_RESTO' ? 'var(--warning)' : 'var(--primary)'};">
+                <div class="section-title" style="margin-bottom:4px;">
+                    <span>Commande #${o.id}</span>
+                    <span class="price">${o.total} MRU</span>
+                </div>
+                <p style="font-size:0.82rem; margin-bottom:4px;">🍽️ ${o.items.map(i => i.name).join(", ")}</p>
+                <p style="font-size:0.78rem; color:var(--muted); margin-bottom:4px;">📍 ${o.landmark}</p>
+                <p style="font-size:0.78rem; font-weight:700; color:var(--primary); margin-bottom:8px;">💳 ${o.payment_method} (${o.payment_status === 'PAID_ONLINE' ? 'Payé en ligne ✅' : 'Espèces'})</p>
+                ${o.status === "PENDING_RESTO" ? `
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-sm" style="flex:1;" onclick="restoDecision('${o.id}', true)">✅ Valider</button>
+                        <button class="btn btn-sm btn-danger" onclick="restoDecision('${o.id}', false)">Refuser</button>
+                    </div>
+                ` : `<span class="badge">Statut : ${o.status}</span>`}
+            </div>
+        `).join("");
+    }
+
+    async function addDishToMenu() {
+        const restoId = parseInt(document.getElementById("restoAdminSelector").value);
+        const name = document.getElementById("newDishName").value.trim();
+        const price = parseInt(document.getElementById("newDishPrice").value);
+        if (!name || !price) return;
+        await fetch('/api/menu/add', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ city: currentCity, resto_id: restoId, name, price })
+        });
+        document.getElementById("newDishName").value = "";
+        document.getElementById("newDishPrice").value = "";
+    }
+
+    async function deleteDish(restoId, itemId) {
+        await fetch(`/api/menu/${currentCity}/${restoId}/${itemId}`, { method: 'DELETE' });
+    }
+
+    function restoDecision(orderId, accepted) {
+        ws.send(JSON.stringify({ action: accepted ? "RESTO_ACCEPT_ORDER" : "RESTO_REJECT_ORDER", order_id: orderId }));
+    }
+
+    function renderDriverDashboard() {
+        const driverId = document.getElementById("driverProfileSelector").value;
+        const myMissions = appState.orders.filter(o => o.driver && o.driver.id === driverId && o.status !== "DELIVERED");
+        const container = document.getElementById("driverMissionsContainer");
+
+        if (!myMissions.length) {
+            container.innerHTML = `<div class="card" style="text-align:center; color:var(--muted); padding:24px;">🛵 Aucune course active.</div>`;
+            return;
+        }
+
+        container.innerHTML = myMissions.map(m => `
+            <div class="card" style="border: 2px solid var(--primary);">
+                <div class="section-title">
+                    <span>🚨 Mission #${m.id}</span>
+                    <span class="price">Gains: ${m.driver_earnings} MRU</span>
+                </div>
+                <p style="font-size:0.84rem; margin-bottom:4px;"><strong>1. Récupérer :</strong> ${m.resto.name}</p>
+                <p style="font-size:0.84rem; margin-bottom:4px;"><strong>2. Livrer :</strong> ${m.landmark}</p>
+                <p style="font-size:0.78rem; color:var(--muted); margin-bottom:10px;">💳 Paiement: <strong>${m.payment_method}</strong> (${m.payment_status === 'PAID_ONLINE' ? 'Déjà payé en ligne ✅' : 'Encaisser Cash'})</p>
+                
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    ${m.status === "ASSIGNED_DRIVER" ? 
+                        `<button class="btn" onclick="driverUpdateStatus('${m.id}', 'PICKED_UP')">📦 Commande récupérée</button>` :
+                        `<button class="btn" onclick="driverUpdateStatus('${m.id}', 'DELIVERED')">🏁 Confirmer livraison</button>`
+                    }
+                    <button class="btn btn-outline btn-sm" onclick="simulateDriverStep('${m.id}')">▶️ Simuler GPS</button>
+                </div>
+            </div>
+        `).join("");
+    }
+
+    function driverUpdateStatus(orderId, status) {
+        ws.send(JSON.stringify({ action: "UPDATE_ORDER_STATUS", order_id: orderId, status }));
+    }
+
+    function toggleRealGPS() {
+        const driverId = document.getElementById("driverProfileSelector").value;
+        const btn = document.getElementById("btnToggleGps");
+        const label = document.getElementById("gpsStatusText");
+
+        if (gpsWatchId) {
+            navigator.geolocation.clearWatch(gpsWatchId);
+            gpsWatchId = null;
+            btn.innerText = "📡 Activer GPS"; label.innerText = "Arrêté";
+            return;
+        }
+        if ("geolocation" in navigator) {
+            btn.innerText = "🟢 GPS Actif"; label.innerText = "Diffusion active...";
+            gpsWatchId = navigator.geolocation.watchPosition(pos => {
+                ws.send(JSON.stringify({
+                    action: "DRIVER_GPS_UPDATE", city: currentCity, driver_id: driverId,
+                    lat: pos.coords.latitude, lng: pos.coords.longitude
+                }));
+            }, null, { enableHighAccuracy: true });
+        }
+    }
+
+    function simulateDriverStep(orderId) {
+        const ord = appState.orders.find(o => o.id === orderId);
+        if (!ord || !ord.driver) return;
+        const targetLat = ord.status === "ASSIGNED_DRIVER" ? ord.resto.lat : ord.client_lat;
+        const targetLng = ord.status === "ASSIGNED_DRIVER" ? ord.resto.lng : ord.client_lng;
+        const newLat = ord.driver.lat + (targetLat - ord.driver.lat) * 0.35;
+        const newLng = ord.driver.lng + (targetLng - ord.driver.lng) * 0.35;
+        ws.send(JSON.stringify({ action: "DRIVER_GPS_UPDATE", city: currentCity, driver_id: ord.driver.id, lat: newLat, lng: newLng }));
+    }
+
+    function renderAdminDashboard() {
+        document.getElementById("adminTotalCommission").innerText = `${appState.stats.total_commission} MRU`;
+        document.getElementById("adminTotalDeliveries").innerText = appState.stats.total_deliveries;
+
+        const deliveredOrders = appState.orders.filter(o => o.status === "DELIVERED");
+        const listDiv = document.getElementById("adminCommissionsList");
+        
+        if (!deliveredOrders.length) {
+            listDiv.innerHTML = `<p style="font-size:0.82rem; color:var(--muted);">Aucune commission encaissée pour l'instant.</p>`;
+            return;
+        }
+
+        listDiv.innerHTML = deliveredOrders.map(o => `
+            <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div style="font-size:0.85rem; font-weight:700;">Commande #${o.id} (${o.resto.name})</div>
+                    <div style="font-size:0.75rem; color:var(--muted);">Payé par: ${o.payment_method}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div class="price">+${o.commission} MRU</div>
+                    <div style="font-size:0.72rem; color:var(--muted);">14% de 150 MRU</div>
+                </div>
+            </div>
+        `).join("");
+    }
+
+    function switchRole(role, btn) {
+        document.querySelectorAll(".role-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        ["clientView", "restoView", "driverView", "adminView"].forEach(id => document.getElementById(id).classList.add("hidden"));
+        document.getElementById(role + "View").classList.remove("hidden");
+        refreshAllViews();
+    }
+
+    window.onload = initApp;
+</script>
+</body>
+</html>
